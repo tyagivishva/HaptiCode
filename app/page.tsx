@@ -68,7 +68,7 @@ export default function Home() {
             
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={SpeechRecognition.startListening}
+                onClick={() => SpeechRecognition.startListening()}
                 className={`flex items-center justify-center gap-2 p-3 rounded-lg font-semibold text-sm transition-all ${listening ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'bg-white text-slate-900 hover:bg-slate-200'}`}
               >
                 <Mic size={16} /> {listening ? "Listening" : "Record"}
