@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const execAsync = promisify(exec);
 
+// --- TYPES ---
 type GeminiModel = {
-  name?: string; // e.g. "models/gemini-2.0-flash"
+  name?: string;
   supportedGenerationMethods?: string[];
 };
+
+// --- HELPER FUNCTIONS ---
 
 function cleanMarkdown(text: string) {
   return (text || "")
@@ -20,7 +24,7 @@ function buildPrompt(mode: string, text?: string, code?: string) {
   if (mode === "generate") {
     return `You are a Python coding assistant.
 Convert the user input into valid Python code.
-Return ONLY Python code.
+Return ONLY Python code. No Markdown.
 
 Input:
 ${text ?? ""}`;
@@ -28,8 +32,7 @@ ${text ?? ""}`;
 
   if (mode === "simplify_code") {
     return `You are an accessibility expert.
-Rewrite the code to be beginner-friendly and easy to read.
-Keep the same behavior.
+Rewrite the code to be beginner-friendly and easy to read. Add comments.
 Return ONLY code.
 
 Code:
@@ -47,6 +50,7 @@ ${text ?? ""}`;
   return `Mode not recognized.`;
 }
 
+// Helper to fetch data safely
 async function fetchJson(url: string, apiKey: string, init?: RequestInit) {
   const res = await fetch(url, {
     ...init,
@@ -61,9 +65,9 @@ async function fetchJson(url: string, apiKey: string, init?: RequestInit) {
   return { ok: res.ok, status: res.status, data };
 }
 
+// 🔎 AUTO-DISCOVERY: Finds a model that works in your region
 async function listWorkingModel(apiKey: string): Promise<string | null> {
-  // Try v1 first, then v1beta (Google keys vary)
-  const versions = ["v1", "v1beta"];
+  const versions = ["v1beta", "v1"];
 
   for (const v of versions) {
     const url = `https://generativelanguage.googleapis.com/${v}/models`;
@@ -72,32 +76,24 @@ async function listWorkingModel(apiKey: string): Promise<string | null> {
     if (!ok) continue;
 
     const models: GeminiModel[] = data.models || [];
+    
     const candidates = models
       .map((m) => m.name || "")
-      .filter(Boolean)
-      .filter((name) => name.startsWith("models/"))
       .filter((name) => name.toLowerCase().includes("gemini"))
-      .filter((name) => !name.toLowerCase().includes("embedding"))
-      .filter((name) => !name.toLowerCase().includes("imagen"));
+      .filter((name) => !name.includes("embedding"))
+      .filter((name) => !name.includes("vision"));
 
-    // Prefer models that explicitly support generateContent if available in payload
-    const withMethods = models
-      .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
-      .map((m) => m.name || "")
-      .filter(Boolean)
-      .filter((name) => name.toLowerCase().includes("gemini"));
-
-    const pick = (withMethods[0] || candidates[0] || "").replace(/^models\//, "");
-    if (pick) return pick;
+    if (candidates.length > 0) {
+      return candidates[0].replace(/^models\//, "");
+    }
   }
 
   return null;
 }
 
+// 🚀 GENERATE: Tries to call the API
 async function generateWithModel(apiKey: string, model: string, prompt: string) {
-  // Try v1 first, then v1beta
-  const versions = ["v1", "v1beta"];
-
+  const versions = ["v1beta", "v1"];
   let lastErr: any = null;
 
   for (const v of versions) {
@@ -111,13 +107,13 @@ async function generateWithModel(apiKey: string, model: string, prompt: string) 
     });
 
     if (ok) return { ok: true, data };
-
     lastErr = data;
-    // If it's NOT_FOUND / model mismatch, try other version next
   }
 
   return { ok: false, data: lastErr };
 }
+
+// --- MAIN API ROUTE ---
 
 export async function POST(req: Request) {
   try {
@@ -125,16 +121,19 @@ export async function POST(req: Request) {
 
     console.log("✅ API HIT:", mode);
 
-    // Execute Python code directly
+    // --- 1. HANDLE CODE EXECUTION (Windows Compatible) ---
     if (mode === "execute_code") {
       try {
-        // Execute Python code and capture output
-        const { stdout, stderr } = await execAsync(`python3 -c "${code.replace(/"/g, '\\"')}"`, {
-          timeout: 5000, // 5 second timeout
-          maxBuffer: 1024 * 1024, // 1MB buffer
-        });
+        // FIX: Use 'python' for Windows
+        const pythonCommand = process.platform === "win32" ? "python" : "python3";
+        
+        // FIX: Added '-u' flag for unbuffered output so it shows up immediately
+        const { stdout, stderr } = await execAsync(
+            `${pythonCommand} -u -c "${code.replace(/"/g, '\\"')}"`, 
+            { timeout: 5000, maxBuffer: 1024 * 1024 }
+        );
 
-        const output = stdout || stderr || "Code executed successfully with no output.";
+        const output = stdout || stderr || "Code executed successfully.";
         return NextResponse.json({ result: output });
       } catch (err: any) {
         const errorOutput = err.stderr || err.message || "Unknown error";
@@ -142,7 +141,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // Run Python static analysis for debug mode (no external deps)
+    // --- 2. HANDLE DEBUGGING (Breakpoints) ---
     if (mode === "debug") {
       try {
         const fs = await import("fs");
@@ -152,16 +151,8 @@ export async function POST(req: Request) {
         const tempFile = path.join(tempDir, `debug_${Date.now()}.py`);
         const scriptFile = path.join(tempDir, `analyzer_${Date.now()}.py`);
         
-        // Parse breakpoints and create debug wrapper
         const breakpointLines = breakpoints && Array.isArray(breakpoints) ? breakpoints : [];
-        const breakpointChecks = breakpointLines.map(bp => `
-if __line__ == ${bp}:
-    print(f"Breakpoint hit at line ${bp}")
-    import sys
-    frame = sys._getframe()
-    print(f"Variables: {frame.f_locals}")`).join('\n');
-
-        // Add sys.settrace for execution debugging with breakpoints
+        
         const debuggedCode = `
 import sys
 
@@ -171,7 +162,7 @@ def trace_calls(frame, event, arg):
     if event == 'line':
         __line__ = frame.f_lineno
         ${breakpointLines.length > 0 ? `if __line__ in ${JSON.stringify(breakpointLines)}:
-            print(f"Breakpoint hit at line {__line__}: {frame.f_code.co_filename}")` : '# No breakpoints set'}
+            print(f"Breakpoint hit at line {__line__}")` : '# No breakpoints'}
     return trace_calls
 
 ${breakpointLines.length > 0 ? 'sys.settrace(trace_calls)' : ''}
@@ -186,80 +177,64 @@ finally:
         fs.writeFileSync(scriptFile, debuggedCode);
         
         try {
-          const { stdout, stderr } = await execAsync(`python3 "${scriptFile}"`, {
+          const pythonCommand = process.platform === "win32" ? "python" : "python3";
+          
+          const { stdout, stderr } = await execAsync(`${pythonCommand} -u "${scriptFile}"`, {
             timeout: 5000,
             maxBuffer: 1024 * 1024,
           });
           
           const output = stdout || stderr || "✓ No issues detected";
-          try { fs.unlinkSync(tempFile); } catch {}
-          try { fs.unlinkSync(scriptFile); } catch {}
           return NextResponse.json({ result: output });
         } catch (err: any) {
           const output = err.stdout || err.stderr || "✓ No issues detected";
-          try { fs.unlinkSync(tempFile); } catch {}
-          try { fs.unlinkSync(scriptFile); } catch {}
           return NextResponse.json({ result: output });
+        } finally {
+            try { fs.unlinkSync(tempFile); } catch {}
+            try { fs.unlinkSync(scriptFile); } catch {}
         }
       } catch (err: any) {
         return NextResponse.json({ result: `Debug error: ${err.message}` });
       }
     }
 
-    // Use AI for other modes (generate, simplify, explain_error)
-    const apiKey = process.env.GEMINI_API_KEY;
+    // --- 3. HANDLE AI GENERATION ---
+    const apiKey = process.env.GOOGLE_API_KEY; 
+    
     if (!apiKey) {
       return NextResponse.json(
-        { result: "Error: Missing GEMINI_API_KEY in .env.local" },
+        { result: "Error: Missing GOOGLE_API_KEY in .env.local" },
         { status: 500 }
       );
     }
 
     const prompt = buildPrompt(mode, text, code);
-
-    // Preferred model from env (if you set it), otherwise we'll auto-discover
-    let model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
-
-    // First attempt
+    let model = "gemini-1.5-flash"; 
+    
+    console.log(`🤖 Requesting AI model: ${model}`);
     let attempt = await generateWithModel(apiKey, model, prompt);
 
-    // If fails, auto-discover a working model and retry once
     if (!attempt.ok) {
-      console.log("⚠️ Model failed:", model, "→ trying to auto-pick a working model...");
-
+      console.log("⚠️ Standard model failed. Auto-discovering...");
       const discovered = await listWorkingModel(apiKey);
-      if (!discovered) {
-        const msg =
-          attempt.data?.error?.message ||
-          "No models available for this API key. Check AI Studio project + key permissions.";
-        return NextResponse.json({ result: `Error: ${msg}` }, { status: 500 });
+      
+      if (discovered) {
+        console.log(`✅ Switched to model: ${discovered}`);
+        attempt = await generateWithModel(apiKey, discovered, prompt);
+      } else {
+        throw new Error("No working Gemini models found.");
       }
-
-      model = discovered;
-      console.log("✅ Auto-picked model:", model);
-
-      attempt = await generateWithModel(apiKey, model, prompt);
     }
 
     if (!attempt.ok) {
-      const msg =
-        attempt.data?.error?.message ||
-        "Gemini API error (unknown).";
-      return NextResponse.json({ result: `Error: ${msg}` }, { status: 500 });
+      throw new Error(attempt.data?.error?.message || "Gemini API error.");
     }
 
-    const data = attempt.data;
-    let resultText =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text || "# No result";
+    let resultText = attempt.data?.candidates?.[0]?.content?.parts?.[0]?.text || "# No result";
+    return NextResponse.json({ result: cleanMarkdown(resultText) });
 
-    resultText = cleanMarkdown(resultText);
-
-    return NextResponse.json({ result: resultText, modelUsed: model });
   } catch (err: any) {
     console.error("❌ API ERROR:", err?.message || err);
-    return NextResponse.json(
-      { result: `Error: ${err?.message || "Unknown error"}` },
-      { status: 500 }
-    );
+    return NextResponse.json({ result: `Error: ${err?.message || "Unknown error"}` }, { status: 500 });
   }
 }
