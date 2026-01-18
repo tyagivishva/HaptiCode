@@ -308,6 +308,31 @@ export default function Home() {
             theme={highContrast ? "vs-light" : "vs-dark"}
             value={code}
             onChange={(val) => setCode(val || "")}
+            beforeMount={(monaco) => {
+              // Define custom syntax highlighting theme
+              monaco.editor.defineTheme('hapticode-dark', {
+                base: 'vs-dark',
+                inherit: true,
+                rules: [
+                  { token: 'comment', foreground: '6A9955', fontStyle: 'italic' }, // Green comments
+                  { token: 'string', foreground: 'CE9178' }, // Orange strings
+                  { token: 'number', foreground: 'B5CEA8' }, // Light green numbers
+                  { token: 'keyword', foreground: '569CD6' }, // Blue keywords
+                  { token: 'type', foreground: '4EC9B0' }, // Teal types
+                  { token: 'function', foreground: 'DCDCAA' }, // Yellow functions
+                  { token: 'variable', foreground: '9CDCFE' }, // Light blue variables
+                  { token: 'operator', foreground: 'D4D4D4' }, // White operators
+                ],
+                colors: {
+                  'editor.background': '#1e1e1e',
+                  'editor.foreground': '#D4D4D4',
+                  'editor.lineNumbersBackground': '#1e1e1e',
+                  'editor.lineNumbersForeground': '#858585',
+                  'editor.selectionBackground': '#264f78',
+                  'editorCursor.foreground': '#AEAFAD',
+                },
+              });
+            }}
             options={{
                 fontSize: fontSize,
                 fontFamily: fontFamily === "menlo" ? "'Menlo', monospace" : "'Courier New', monospace",
