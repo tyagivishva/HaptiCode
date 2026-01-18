@@ -1,20 +1,32 @@
 "use client";
 
 import "regenerator-runtime/runtime";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Editor from "@monaco-editor/react";
 import SpeechRecognition, { useSpeechRecognition } from "react-speech-recognition";
 import { Mic, StopCircle, Wand2, Activity, Terminal, ChevronRight } from "lucide-react";
-import { motion } from "framer-motion";
 
 export default function Home() {
   const [code, setCode] = useState("# Python code will appear here...\n");
   const [consoleOutput, setConsoleOutput] = useState("Ready...");
   const [isProcessing, setIsProcessing] = useState(false);
+  
+  // --- FIX FOR HYDRATION ERROR ---
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+  // -------------------------------
 
   const { transcript, listening, browserSupportsSpeechRecognition } = useSpeechRecognition();
 
-  if (!browserSupportsSpeechRecognition) return <span>Use Chrome.</span>;
+  // Prevent rendering until we are sure we are on the client
+  if (!isClient) return null;
+
+  if (!browserSupportsSpeechRecognition) {
+    return <div className="flex items-center justify-center h-screen text-white">Browser does not support speech recognition. Use Chrome.</div>;
+  }
 
   // --- API HANDLER ---
   const handleAIRequest = async (mode: string, inputData: string) => {
@@ -26,25 +38,64 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode, text: inputData, code: code }),
       });
+      
       const data = await response.json();
-      if (mode === "generate" || mode === "simplify_code") setCode(data.result);
-      if (mode === "explain_error") {
+      
+      if (!response.ok) {
+        throw new Error(data.result || "Server Error");
+      }
+
+      if (mode === "generate" || mode === "simplify_code") {
+        setCode(data.result);
+        setConsoleOutput("Success: Code updated.");
+      } 
+      else if (mode === "explain_error") {
          setConsoleOutput(data.result);
          speakText(data.result);
       }
-    } catch (e) { setConsoleOutput("Error connecting to AI."); } 
-    finally { setIsProcessing(false); }
+    } catch (e: any) { 
+      setConsoleOutput(`Error: ${e.message}`); 
+    } 
+    finally { 
+      setIsProcessing(false); 
+    }
   };
 
-  const readAndVibrateCode = () => { /* ... keep previous logic ... */ };
+  // --- HAPTIC LOGIC ---
+  const readAndVibrateCode = () => {
+    setConsoleOutput("Scanning indentation for haptics...");
+    const lines = code.split("\n");
+    let delay = 0;
+
+    lines.forEach((line) => {
+      // Calculate delay based on reading speed (approx 3.5s per line)
+      setTimeout(() => {
+        const leadingSpaces = line.search(/\S|$/);
+        const indentLevel = Math.floor(leadingSpaces / 4);
+
+        // Vibrate if on Android
+        if (typeof navigator !== "undefined" && navigator.vibrate) {
+            if (indentLevel === 1) navigator.vibrate(200); 
+            if (indentLevel >= 2) navigator.vibrate([100, 50, 100]); 
+        }
+        speakText(line);
+      }, delay);
+      
+      delay += 3500; 
+    });
+  };
+
   const speakText = (text: string) => { 
-    if ('speechSynthesis' in window) window.speechSynthesis.speak(new SpeechSynthesisUtterance(text)); 
+    if ('speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        window.speechSynthesis.speak(utterance);
+    } 
   };
 
   return (
     <main className="flex h-screen w-full bg-[#0f172a] text-slate-100 font-sans overflow-hidden">
       
-      {/* --- SIDEBAR: Clean Slate Design --- */}
+      {/* --- SIDEBAR --- */}
       <div className="w-[360px] flex flex-col border-r border-slate-700/50 bg-[#1e293b] shadow-xl z-10">
         
         {/* Header */}
@@ -119,7 +170,7 @@ export default function Home() {
             roundedSelection: false,
             scrollBeyondLastLine: false,
             padding: { top: 20 },
-            overviewRulerBorder: false, // Cleaner look
+            overviewRulerBorder: false, 
           }}
         />
       </div>

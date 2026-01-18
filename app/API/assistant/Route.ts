@@ -10,7 +10,8 @@ export async function POST(req: Request) {
     const { mode, text, code } = await req.json();
 
     // 3. Select the Model (Flash is fastest for hackathons)
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// Try this specific version which is often more stable in Canada
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
     let prompt = "";
 
