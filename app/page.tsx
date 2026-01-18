@@ -104,9 +104,24 @@ export default function Home() {
         const indentLevel = Math.floor(leadingSpaces / 4);
 
         const timeoutId = setTimeout(() => {
+          // Enhanced haptic feedback based on indentation
           if (navigator.vibrate) {
-            if (indentLevel === 1) navigator.vibrate(50);
-            if (indentLevel >= 2) navigator.vibrate([50, 50, 50]);
+            if (indentLevel === 0) {
+              // No indent: Single short buzz
+              navigator.vibrate(30);
+            } else if (indentLevel === 1) {
+              // Level 1: Medium buzz
+              navigator.vibrate(60);
+            } else if (indentLevel === 2) {
+              // Level 2: Double pulse
+              navigator.vibrate([50, 50, 50]);
+            } else if (indentLevel === 3) {
+              // Level 3: Triple pulse
+              navigator.vibrate([40, 30, 40, 30, 40]);
+            } else {
+              // Level 4+: Long pattern
+              navigator.vibrate([30, 20, 30, 20, 30, 20, 30]);
+            }
           }
           speakText(cleanLine);
         }, accumulatedDelay);
@@ -130,21 +145,54 @@ export default function Home() {
 
   const speakText = (text: string) => { 
     if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(text);
+        // Convert special characters to their spoken equivalents
+        let spokenText = text
+          .replace(/"/g, " quote ")
+          .replace(/'/g, " apostrophe ")
+          .replace(/`/g, " backtick ")
+          .replace(/</g, " less than ")
+          .replace(/>/g, " greater than ")
+          .replace(/~/g, " tilde ")
+          .replace(/\^/g, " caret ")
+          .replace(/\$/g, " dollar ")
+          .replace(/%/g, " percent ")
+          .replace(/&/g, " ampersand ")
+          .replace(/\*/g, " asterisk ")
+          .replace(/\+/g, " plus ")
+          .replace(/=/g, " equals ")
+          .replace(/-/g, " dash ")
+          .replace(/_/g, " underscore ")
+          .replace(/\{/g, " open brace ")
+          .replace(/\}/g, " close brace ")
+          .replace(/\[/g, " open bracket ")
+          .replace(/\]/g, " close bracket ")
+          .replace(/\(/g, " open paren ")
+          .replace(/\)/g, " close paren ")
+          .replace(/\//g, " slash ")
+          .replace(/\\/g, " backslash ")
+          .replace(/\|/g, " pipe ")
+          .replace(/:/g, " colon ")
+          .replace(/;/g, " semicolon ")
+          .replace(/,/g, " comma ")
+          .replace(/\./g, " dot ")
+          .replace(/\?/g, " question mark ")
+          .replace(/!/g, " exclamation ");
+        
+        const utterance = new SpeechSynthesisUtterance(spokenText);
         utterance.rate = 1.0;
         window.speechSynthesis.speak(utterance);
     } 
   };
 
   return (
-    <main className={`flex h-screen w-full overflow-hidden transition-colors ${highContrast ? 'bg-slate-900 text-white' : 'bg-[#1e1e1e] text-[#cccccc]'}`}>
+    <main className={`flex h-screen w-full overflow-hidden transition-colors ${highContrast ? 'bg-gray-900 text-white' : 'bg-[#1e1e1e] text-[#cccccc]'}`}>
       
       {/* --- SIDEBAR --- */}
-      <div className={`w-[300px] flex flex-col border-r overflow-hidden ${highContrast ? 'border-cyan-400 bg-slate-900' : 'border-[#2b2b2b] bg-[#252526]'}`}>
+      <div className={`w-[300px] flex flex-col border-r overflow-hidden ${highContrast ? 'border-blue-500 bg-gray-900' : 'border-[#2b2b2b] bg-[#252526]'}`}>
         
         {/* Header */}
-        <div className={`p-4 border-b flex items-center gap-2 ${highContrast ? 'border-cyan-400 bg-slate-900' : 'border-[#2b2b2b] bg-[#252526]'}`}>
-          <div className={`w-3 h-3 rounded-full ${highContrast ? 'bg-cyan-400' : 'bg-blue-500'}`}></div>
+        <div className={`p-4 border-b flex items-center gap-2 ${highContrast ? 'border-blue-500 bg-gray-900' : 'border-[#2b2b2b] bg-[#252526]'}`}>
+          <div className={`w-3 h-3 rounded-full ${highContrast ? 'bg-blue-400' : 'bg-blue-500'}`}></div>
           <h1 className={`text-sm font-bold tracking-wider ${highContrast ? 'text-white' : 'text-white'}`}>HAPTICODE</h1>
         </div>
 
@@ -212,46 +260,43 @@ export default function Home() {
         </div>so 
 
         {/* Footer Status */}
-        <div className={`p-2 text-[10px] flex justify-between items-center ${highContrast ? 'bg-cyan-400 text-slate-900' : 'bg-[#007acc] text-white'}`}>
+        <div className={`p-2 text-[10px] flex justify-between items-center ${highContrast ? 'bg-blue-600 text-white' : 'bg-[#007acc] text-white'}`}>
             <span className="truncate max-w-[150px]">{isProcessing ? "Thinking..." : consoleOutput}</span>
             <span className="flex items-center gap-1"><Volume2 size={10} /> Ready</span>
         </div>
       </div>
 
       {/* --- EDITOR PANEL --- */}
-      <div className={`flex-1 flex flex-col ${highContrast ? 'bg-slate-900' : 'bg-[#1e1e1e]'}`}>
+      <div className={`flex-1 flex flex-col ${highContrast ? 'bg-gray-900' : 'bg-[#1e1e1e]'}`}>
         
         {/* Accessibility Settings Bar */}
-        <div className={`flex items-center gap-4 px-4 py-3 border-b ${highContrast ? 'bg-slate-900 border-cyan-400' : 'bg-[#252526] border-[#2b2b2b]'}`}>
+        <div className={`flex items-center gap-4 px-4 py-3 border-b ${highContrast ? 'bg-gray-900 border-blue-500' : 'bg-[#252526] border-[#2b2b2b]'}`}>
           <div className="flex items-center gap-2">
-            <label className={`text-[10px] font-bold uppercase ${highContrast ? 'text-cyan-400' : 'text-[#6b6b6b]'}`}>Theme</label>
+            <label className={`text-[10px] font-bold uppercase ${highContrast ? 'text-blue-400' : 'text-[#6b6b6b]'}`}>Theme</label>
             <button 
               onClick={() => setHighContrast(!highContrast)}
-              className={`px-3 py-1 rounded text-xs font-bold transition-all ${highContrast ? 'bg-cyan-400 text-slate-900' : 'bg-[#333] text-white hover:bg-[#444]'}`}
+              className={`px-3 py-1 rounded text-xs font-bold transition-all ${highContrast ? 'bg-blue-600 text-white' : 'bg-[#333] text-white hover:bg-[#444]'}`}
             >
               {highContrast ? "High Contrast" : "Normal"}
             </button>
           </div>
 
           <div className="flex items-center gap-2">
-            <label className={`text-[10px] font-bold uppercase ${highContrast ? 'text-cyan-400' : 'text-[#6b6b6b]'}`}>Size</label>
-            <button onClick={() => setFontSize(Math.max(12, fontSize - 2))} className={`px-2 py-1 rounded text-xs ${highContrast ? 'bg-cyan-400 text-slate-900 hover:bg-cyan-300' : 'bg-[#333] hover:bg-[#444]'}`}>−</button>
-            <span className={`w-12 text-center text-xs rounded py-1 ${highContrast ? 'bg-slate-800 text-white border border-cyan-400' : 'bg-[#1e1e1e] text-white border border-[#3e3e42]'}`}>{fontSize}px</span>
-            <button onClick={() => setFontSize(Math.min(24, fontSize + 2))} className={`px-2 py-1 rounded text-xs ${highContrast ? 'bg-cyan-400 text-slate-900 hover:bg-cyan-300' : 'bg-[#333] hover:bg-[#444]'}`}>+</button>
+            <label className={`text-[10px] font-bold uppercase ${highContrast ? 'text-blue-400' : 'text-[#6b6b6b]'}`}>Size</label>
+            <button onClick={() => setFontSize(Math.max(12, fontSize - 2))} className={`px-2 py-1 rounded text-xs ${highContrast ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-[#333] hover:bg-[#444]'}`}>−</button>
+            <span className={`w-12 text-center text-xs rounded py-1 ${highContrast ? 'bg-gray-800 text-white border border-blue-500' : 'bg-[#1e1e1e] text-white border border-[#3e3e42]'}`}>{fontSize}px</span>
+            <button onClick={() => setFontSize(Math.min(24, fontSize + 2))} className={`px-2 py-1 rounded text-xs ${highContrast ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-[#333] hover:bg-[#444]'}`}>+</button>
           </div>
 
           <div className="flex items-center gap-2">
-            <label className={`text-[10px] font-bold uppercase ${highContrast ? 'text-cyan-400' : 'text-[#6b6b6b]'}`}>Font</label>
+            <label className={`text-[10px] font-bold uppercase ${highContrast ? 'text-blue-400' : 'text-[#6b6b6b]'}`}>Font</label>
             <select 
               value={fontFamily}
               onChange={(e) => setFontFamily(e.target.value)}
-              className={`px-2 py-1 rounded text-xs focus:outline-none ${highContrast ? 'bg-cyan-400 text-slate-900' : 'bg-[#333] text-white border border-[#3e3e42]'}`}
+              className={`px-2 py-1 rounded text-xs focus:outline-none ${highContrast ? 'bg-blue-600 text-white' : 'bg-[#333] text-white border border-[#3e3e42]'}`}
             >
               <option value="menlo">Menlo</option>
               <option value="courier">Courier New</option>
-              <option value="sourcecodepro">Source Code Pro</option>
-              <option value="inconsolata">Inconsolata</option>
-              <option value="fira">Fira Code</option>
             </select>
           </div>
         </div>
@@ -265,11 +310,7 @@ export default function Home() {
             onChange={(val) => setCode(val || "")}
             options={{
                 fontSize: fontSize,
-                fontFamily: fontFamily === "menlo" ? "'Menlo', monospace" : 
-                           fontFamily === "courier" ? "'Courier New', monospace" :
-                           fontFamily === "sourcecodepro" ? "'Source Code Pro', monospace" :
-                           fontFamily === "inconsolata" ? "'Inconsolata', monospace" :
-                           "'Fira Code', monospace",
+                fontFamily: fontFamily === "menlo" ? "'Menlo', monospace" : "'Courier New', monospace",
                 fontLigatures: true,
                 minimap: { enabled: false },
                 scrollBeyondLastLine: false,
@@ -281,11 +322,11 @@ export default function Home() {
         />
         
         {/* Terminal Panel */}
-        <div className={`h-[30vh] border-t flex flex-col ${highContrast ? 'border-cyan-400 bg-slate-900' : 'border-[#2b2b2b] bg-[#1e1e1e]'}`}>
-            <div className={`flex items-center gap-2 px-4 py-2 border-b text-xs uppercase tracking-wider ${highContrast ? 'border-cyan-400 bg-slate-900 text-white' : 'border-[#2b2b2b] bg-[#252526] text-[#cccccc]'}`}>
+        <div className={`h-[30vh] border-t flex flex-col ${highContrast ? 'border-blue-500 bg-gray-900' : 'border-[#2b2b2b] bg-[#1e1e1e]'}`}>
+            <div className={`flex items-center gap-2 px-4 py-2 border-b text-xs uppercase tracking-wider ${highContrast ? 'border-blue-500 bg-gray-900 text-white' : 'border-[#2b2b2b] bg-[#252526] text-[#cccccc]'}`}>
                 <Terminal size={12} /> Console / Output
             </div>
-            <div className={`flex-1 p-4 font-mono text-sm overflow-auto ${highContrast ? 'text-cyan-400 bg-slate-950' : 'text-green-400'}`} style={{ fontSize: `${fontSize * 0.9}px` }}>
+            <div className={`flex-1 p-4 font-mono text-sm overflow-auto ${highContrast ? 'text-blue-300 bg-gray-950' : 'text-green-400'}`} style={{ fontSize: `${fontSize * 0.9}px` }}>
                 <pre className="whitespace-pre-wrap">{terminalOutput}</pre>
             </div>
         </div>
