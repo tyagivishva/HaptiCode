@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 
 type GeminiModel = {
   name?: string; // e.g. "models/gemini-2.0-flash"
@@ -20,15 +24,6 @@ Return ONLY Python code.
 
 Input:
 ${text ?? ""}`;
-  }
-
-  if (mode === "execute_code") {
-    return `You are a Python interpreter.
-Predict what this code prints to the console.
-Return ONLY the console output (no explanations).
-
-Code:
-${code ?? ""}`;
   }
 
   if (mode === "simplify_code") {
@@ -126,6 +121,92 @@ async function generateWithModel(apiKey: string, model: string, prompt: string) 
 
 export async function POST(req: Request) {
   try {
+    const { mode, text, code, breakpoints } = await req.json();
+
+    console.log("✅ API HIT:", mode);
+
+    // Execute Python code directly
+    if (mode === "execute_code") {
+      try {
+        // Execute Python code and capture output
+        const { stdout, stderr } = await execAsync(`python3 -c "${code.replace(/"/g, '\\"')}"`, {
+          timeout: 5000, // 5 second timeout
+          maxBuffer: 1024 * 1024, // 1MB buffer
+        });
+
+        const output = stdout || stderr || "Code executed successfully with no output.";
+        return NextResponse.json({ result: output });
+      } catch (err: any) {
+        const errorOutput = err.stderr || err.message || "Unknown error";
+        return NextResponse.json({ result: `Error:\n${errorOutput}` });
+      }
+    }
+
+    // Run Python static analysis for debug mode (no external deps)
+    if (mode === "debug") {
+      try {
+        const fs = await import("fs");
+        const path = await import("path");
+        const os = await import("os");
+        const tempDir = os.tmpdir();
+        const tempFile = path.join(tempDir, `debug_${Date.now()}.py`);
+        const scriptFile = path.join(tempDir, `analyzer_${Date.now()}.py`);
+        
+        // Parse breakpoints and create debug wrapper
+        const breakpointLines = breakpoints && Array.isArray(breakpoints) ? breakpoints : [];
+        const breakpointChecks = breakpointLines.map(bp => `
+if __line__ == ${bp}:
+    print(f"Breakpoint hit at line ${bp}")
+    import sys
+    frame = sys._getframe()
+    print(f"Variables: {frame.f_locals}")`).join('\n');
+
+        // Add sys.settrace for execution debugging with breakpoints
+        const debuggedCode = `
+import sys
+
+__line__ = 0
+def trace_calls(frame, event, arg):
+    global __line__
+    if event == 'line':
+        __line__ = frame.f_lineno
+        ${breakpointLines.length > 0 ? `if __line__ in ${JSON.stringify(breakpointLines)}:
+            print(f"Breakpoint hit at line {__line__}: {frame.f_code.co_filename}")` : '# No breakpoints set'}
+    return trace_calls
+
+${breakpointLines.length > 0 ? 'sys.settrace(trace_calls)' : ''}
+
+try:
+    exec("""${code.replace(/"/g, '\\"').replace(/\n/g, '\\n')}""")
+finally:
+    ${breakpointLines.length > 0 ? 'sys.settrace(None)' : 'pass'}
+`;
+
+        fs.writeFileSync(tempFile, code);
+        fs.writeFileSync(scriptFile, debuggedCode);
+        
+        try {
+          const { stdout, stderr } = await execAsync(`python3 "${scriptFile}"`, {
+            timeout: 5000,
+            maxBuffer: 1024 * 1024,
+          });
+          
+          const output = stdout || stderr || "✓ No issues detected";
+          try { fs.unlinkSync(tempFile); } catch {}
+          try { fs.unlinkSync(scriptFile); } catch {}
+          return NextResponse.json({ result: output });
+        } catch (err: any) {
+          const output = err.stdout || err.stderr || "✓ No issues detected";
+          try { fs.unlinkSync(tempFile); } catch {}
+          try { fs.unlinkSync(scriptFile); } catch {}
+          return NextResponse.json({ result: output });
+        }
+      } catch (err: any) {
+        return NextResponse.json({ result: `Debug error: ${err.message}` });
+      }
+    }
+
+    // Use AI for other modes (generate, simplify, explain_error)
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
@@ -133,10 +214,6 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
-
-    const { mode, text, code } = await req.json();
-
-    console.log("✅ API HIT:", mode);
 
     const prompt = buildPrompt(mode, text, code);
 

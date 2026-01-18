@@ -4,7 +4,7 @@ import "regenerator-runtime/runtime";
 import React, { useState, useEffect, JSX } from "react";
 import Editor from "@monaco-editor/react";
 import SpeechRecognition, { useSpeechRecognition } from "react-speech-recognition";
-import { Mic, StopCircle, Wand2, Activity, Terminal, ChevronRight, Play, Bug, Volume2 } from "lucide-react";
+import { Mic, StopCircle, Wand2, Activity, Terminal, ChevronRight, Play, Bug, Volume2, Zap } from "lucide-react";
 
 export default function Home() {
   // State
@@ -21,12 +21,65 @@ export default function Home() {
   const [isReading, setIsReading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const timeoutIdsRef = React.useRef<NodeJS.Timeout[]>([]);
+  const [editorHeight, setEditorHeight] = useState(70); // Percentage
+  const isDraggingRef = React.useRef(false);
+  const [breakpoints, setBreakpoints] = useState<number[]>([]); // Line numbers with breakpoints
+  const editorRef = React.useRef<any>(null);
+  const monacoRef = React.useRef<any>(null);
 
   // Hooks
   const { transcript, listening, browserSupportsSpeechRecognition, resetTranscript } = useSpeechRecognition();
 
   // Fix hydration issues
   useEffect(() => { setIsClient(true); }, []);
+
+  // Resize handler for editor/terminal divider
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingRef.current) return;
+      
+      const container = document.querySelector('[data-editor-container]') as HTMLElement;
+      if (!container) return;
+      
+      const rect = container.getBoundingClientRect();
+      const newHeight = ((e.clientY - rect.top) / rect.height) * 100;
+      
+      // Constrain between 30% and 70%
+      if (newHeight >= 30 && newHeight <= 70) {
+        setEditorHeight(newHeight);
+      }
+    };
+
+    const handleMouseUp = () => {
+      isDraggingRef.current = false;
+    };
+
+    if (isDraggingRef.current) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
+  // Update breakpoint decorations
+  useEffect(() => {
+    if (editorRef.current && monacoRef.current) {
+      const decorations = breakpoints.map(lineNum => ({
+        range: new monacoRef.current.Range(lineNum, 1, lineNum, 1),
+        options: {
+          isWholeLine: true,
+          className: 'breakpoint-line',
+          glyphMarginClassName: 'codicon codicon-debug-breakpoint',
+          glyphMarginHoverMessage: { value: `Breakpoint - Click to remove` },
+        },
+      }));
+      editorRef.current.deltaDecorations([], decorations);
+    }
+  }, [breakpoints]);
 
   if (!isClient) return null;
   if (!browserSupportsSpeechRecognition) {
@@ -38,11 +91,16 @@ export default function Home() {
     setIsProcessing(true);
     setConsoleOutput(mode === "execute_code" ? "Executing..." : `Processing...`);
     
+    // Clear previous terminal output for new executions
+    if (mode === "execute_code" || mode === "generate") {
+      setTerminalOutput(">> Terminal Ready");
+    }
+    
     try {
       const response = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, text: inputData, code: code }),
+        body: JSON.stringify({ mode, text: inputData, code: code, breakpoints: breakpoints }),
       });
       
       const data = await response.json();
@@ -57,10 +115,20 @@ export default function Home() {
         }
         setConsoleOutput("Success.");
       } 
-      else if (mode === "explain_error") {
-         setConsoleOutput("Explanation received.");
-         setTerminalOutput(`>> AI Explanation:\n${data.result}`);
-         speakText(data.result);
+      else if (mode === "explain_error" || mode === "debug") {
+         const label = mode === "debug" ? "AI Debug Analysis" : "AI Explanation";
+         setConsoleOutput(label + " received.");
+         setTerminalOutput(`>> ${label}:\n${data.result}`);
+         
+         // Auto-speak debug output if there are breakpoints hit
+         if (mode === "debug" && data.result.includes("Breakpoint") && breakpoints.length > 0) {
+           const breakpointMsg = `Debug breakpoint hit. ${data.result.replace(/\n/g, '. ')}`;
+           speakText(breakpointMsg);
+         } else if (mode === "debug") {
+           speakText(data.result);
+         } else {
+           speakText(data.result);
+         }
       }
       else if (mode === "execute_code") {
         setTerminalOutput(`>> Output:\n${data.result}`);
@@ -73,6 +141,17 @@ export default function Home() {
     finally { 
       setIsProcessing(false); 
       if (mode === "generate") resetTranscript();
+    }
+  };
+
+  // --- BREAKPOINT MANAGER ---
+  const toggleBreakpoint = (lineNumber: number) => {
+    if (breakpoints.includes(lineNumber)) {
+      setBreakpoints(breakpoints.filter(bp => bp !== lineNumber));
+      setConsoleOutput(`Breakpoint removed at line ${lineNumber}`);
+    } else {
+      setBreakpoints([...breakpoints, lineNumber].sort((a, b) => a - b));
+      setConsoleOutput(`Breakpoint set at line ${lineNumber}`);
     }
   };
 
@@ -238,6 +317,7 @@ export default function Home() {
             <div className="space-y-2">
                 <label className="text-[10px] font-bold uppercase text-[#6b6b6b]">Assistive Tools</label>
                 <ToolsButton label="Simplify Syntax" icon={<Wand2 size={14} />} onClick={() => handleAIRequest("simplify_code", "")} />
+                <ToolsButton label="Debug Code" icon={<Zap size={14} />} onClick={() => handleAIRequest("debug", "")} />
                 <div className="flex gap-2">
                   <button 
                     onClick={readAndVibrateCode}
@@ -267,7 +347,7 @@ export default function Home() {
       </div>
 
       {/* --- EDITOR PANEL --- */}
-      <div className={`flex-1 flex flex-col ${highContrast ? 'bg-gray-900' : 'bg-[#1e1e1e]'}`}>
+      <div className={`flex-1 flex flex-col ${highContrast ? 'bg-gray-900' : 'bg-[#1e1e1e]'}`} data-editor-container>
         
         {/* Accessibility Settings Bar */}
         <div className={`flex items-center gap-4 px-4 py-3 border-b ${highContrast ? 'bg-gray-900 border-blue-500' : 'bg-[#252526] border-[#2b2b2b]'}`}>
@@ -303,11 +383,25 @@ export default function Home() {
         
         <Editor
             key={`editor-${fontFamily}-${fontSize}`}
-            height="70vh"
+            height={`${editorHeight}vh`}
             defaultLanguage="python"
             theme={highContrast ? "vs-light" : "vs-dark"}
             value={code}
             onChange={(val) => setCode(val || "")}
+            onMount={(editor: any, monaco: any) => {
+              editorRef.current = editor;
+              monacoRef.current = monaco;
+              
+              // Add gutter click handler for breakpoints
+              editor.onMouseDown((e: any) => {
+                if (e.target?.type === 2) { // 2 = gutter/line numbers
+                  const lineNumber = e.target.position?.lineNumber;
+                  if (lineNumber) {
+                    toggleBreakpoint(lineNumber);
+                  }
+                }
+              });
+            }}
             beforeMount={(monaco) => {
               // Define custom syntax highlighting theme
               monaco.editor.defineTheme('hapticode-dark', {
@@ -346,8 +440,16 @@ export default function Home() {
             }}
         />
         
+        {/* Resizable Divider */}
+        <div
+          onMouseDown={() => { isDraggingRef.current = true; }}
+          className={`h-1 cursor-row-resize transition-colors ${highContrast ? 'bg-blue-400 hover:bg-blue-300' : 'bg-[#3e3e42] hover:bg-[#569CD6]'}`}
+          style={{ userSelect: 'none' }}
+          title="Drag to resize editor and console"
+        />
+        
         {/* Terminal Panel */}
-        <div className={`h-[30vh] border-t flex flex-col ${highContrast ? 'border-blue-500 bg-gray-900' : 'border-[#2b2b2b] bg-[#1e1e1e]'}`}>
+        <div className={`flex flex-col ${highContrast ? 'border-blue-500 bg-gray-900' : 'border-[#2b2b2b] bg-[#1e1e1e]'}`} style={{ height: `${100 - editorHeight}vh` }}>
             <div className={`flex items-center gap-2 px-4 py-2 border-b text-xs uppercase tracking-wider ${highContrast ? 'border-blue-500 bg-gray-900 text-white' : 'border-[#2b2b2b] bg-[#252526] text-[#cccccc]'}`}>
                 <Terminal size={12} /> Console / Output
             </div>
