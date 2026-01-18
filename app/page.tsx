@@ -1,37 +1,35 @@
 "use client";
 
 import "regenerator-runtime/runtime";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, JSX } from "react";
 import Editor from "@monaco-editor/react";
 import SpeechRecognition, { useSpeechRecognition } from "react-speech-recognition";
-import { Mic, StopCircle, Wand2, Activity, Terminal, ChevronRight } from "lucide-react";
+import { Mic, StopCircle, Wand2, Activity, Terminal, ChevronRight, Play, Bug, Volume2 } from "lucide-react";
 
 export default function Home() {
-  const [code, setCode] = useState("# Python code will appear here...\n");
+  // State
+  const [code, setCode] = useState("# HaptiCode: Press 'Record' and speak...\n");
   const [consoleOutput, setConsoleOutput] = useState("Ready...");
+  const [terminalOutput, setTerminalOutput] = useState(">> Terminal Ready");
   const [isProcessing, setIsProcessing] = useState(false);
-  
-  // --- FIX FOR HYDRATION ERROR ---
   const [isClient, setIsClient] = useState(false);
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-  // -------------------------------
+  // Hooks
+  const { transcript, listening, browserSupportsSpeechRecognition, resetTranscript } = useSpeechRecognition();
 
-  const { transcript, listening, browserSupportsSpeechRecognition } = useSpeechRecognition();
+  // Fix hydration issues
+  useEffect(() => { setIsClient(true); }, []);
 
-  // Prevent rendering until we are sure we are on the client
   if (!isClient) return null;
-
   if (!browserSupportsSpeechRecognition) {
-    return <div className="flex items-center justify-center h-screen text-white">Browser does not support speech recognition. Use Chrome.</div>;
+    return <div className="h-screen flex items-center justify-center bg-black text-white">Browser not supported. Please use Chrome.</div>;
   }
 
   // --- API HANDLER ---
   const handleAIRequest = async (mode: string, inputData: string) => {
     setIsProcessing(true);
-    setConsoleOutput(`Processing: ${mode}...`);
+    setConsoleOutput(mode === "execute_code" ? "Executing..." : `Processing...`);
+    
     try {
       const response = await fetch("/api/assistant", {
         method: "POST",
@@ -41,152 +39,181 @@ export default function Home() {
       
       const data = await response.json();
       
-      if (!response.ok) {
-        throw new Error(data.result || "Server Error");
-      }
+      if (!response.ok) throw new Error(data.result);
 
       if (mode === "generate" || mode === "simplify_code") {
         setCode(data.result);
-        setConsoleOutput("Success: Code updated.");
+        setConsoleOutput("Success.");
       } 
       else if (mode === "explain_error") {
-         setConsoleOutput(data.result);
+         setConsoleOutput("Explanation received.");
+         setTerminalOutput(`>> AI Explanation:\n${data.result}`);
          speakText(data.result);
       }
+      else if (mode === "execute_code") {
+        setTerminalOutput(`>> Output:\n${data.result}`);
+        setConsoleOutput("Execution finished.");
+      }
     } catch (e: any) { 
-      setConsoleOutput(`Error: ${e.message}`); 
+      setConsoleOutput("Error."); 
+      setTerminalOutput(`>> Error: ${e.message}`);
     } 
     finally { 
       setIsProcessing(false); 
+      if (mode === "generate") resetTranscript();
     }
   };
 
-  // --- HAPTIC LOGIC ---
+  // --- HAPTIC & VOICE ENGINE ---
   const readAndVibrateCode = () => {
-    setConsoleOutput("Scanning indentation for haptics...");
+    setConsoleOutput("Playing Haptics...");
+    window.speechSynthesis.cancel(); // Critical: Stop previous speech
+
     const lines = code.split("\n");
-    let delay = 0;
+    let accumulatedDelay = 0;
 
     lines.forEach((line) => {
-      // Calculate delay based on reading speed (approx 3.5s per line)
-      setTimeout(() => {
-        const leadingSpaces = line.search(/\S|$/);
-        const indentLevel = Math.floor(leadingSpaces / 4);
+      const cleanLine = line.trim();
+      if (!cleanLine) return;
 
-        // Vibrate if on Android
-        if (typeof navigator !== "undefined" && navigator.vibrate) {
-            if (indentLevel === 1) navigator.vibrate(200); 
-            if (indentLevel >= 2) navigator.vibrate([100, 50, 100]); 
+      // 1. Calculate Indentation Depth
+      const leadingSpaces = line.search(/\S|$/);
+      const indentLevel = Math.floor(leadingSpaces / 4);
+
+      // 2. Schedule Action
+      setTimeout(() => {
+        // Vibrate (Android Only)
+        if (navigator.vibrate) {
+            // Level 1 Indent: Short Buzz (50ms)
+            if (indentLevel === 1) navigator.vibrate(50);
+            // Level 2+ Indent: Double Pulse
+            if (indentLevel >= 2) navigator.vibrate([50, 50, 50]);
         }
-        speakText(line);
-      }, delay);
+        
+        // Speak
+        speakText(cleanLine);
+      }, accumulatedDelay);
       
-      delay += 3500; 
+      // Add dynamic delay based on text length
+      accumulatedDelay += (cleanLine.length * 80) + 1200; 
     });
   };
 
   const speakText = (text: string) => { 
     if ('speechSynthesis' in window) {
         const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
         window.speechSynthesis.speak(utterance);
     } 
   };
 
   return (
-    <main className="flex h-screen w-full bg-[#0f172a] text-slate-100 font-sans overflow-hidden">
+    <main className="flex h-screen w-full bg-[#1e1e1e] text-[#cccccc] font-sans overflow-hidden">
       
       {/* --- SIDEBAR --- */}
-      <div className="w-[360px] flex flex-col border-r border-slate-700/50 bg-[#1e293b] shadow-xl z-10">
+      <div className="w-[300px] flex flex-col border-r border-[#2b2b2b] bg-[#252526]">
         
         {/* Header */}
-        <div className="p-6 border-b border-slate-700/50">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-            <h1 className="text-xl font-bold text-white tracking-tight">Hackville IDE</h1>
-          </div>
-          <p className="text-xs text-slate-400 font-medium">Accessible coding suite</p>
+        <div className="p-4 border-b border-[#2b2b2b] flex items-center gap-2">
+          <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+          <h1 className="text-sm font-bold tracking-wider text-white">HAPTICODE</h1>
         </div>
 
-        {/* Voice Input Area */}
-        <div className="p-6 flex-1 overflow-y-auto space-y-6">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Voice Input</label>
-            <div className={`p-4 rounded-xl border-2 transition-colors ${listening ? 'border-blue-500 bg-blue-500/10' : 'border-slate-700 bg-slate-800'}`}>
-               <p className="text-sm text-slate-300 min-h-[60px]">
-                 {transcript || <span className="opacity-50">Press record and speak...</span>}
-               </p>
-            </div>
+        {/* Controls Container */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-6">
             
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => SpeechRecognition.startListening()}
-                className={`flex items-center justify-center gap-2 p-3 rounded-lg font-semibold text-sm transition-all ${listening ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'bg-white text-slate-900 hover:bg-slate-200'}`}
-              >
-                <Mic size={16} /> {listening ? "Listening" : "Record"}
-              </button>
-              <button
-                onClick={() => { SpeechRecognition.stopListening(); handleAIRequest("generate", transcript); }}
-                className="flex items-center justify-center gap-2 p-3 rounded-lg font-semibold text-sm bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20 transition-all"
-              >
-                <StopCircle size={16} /> Process
-              </button>
+            {/* 1. Voice Input */}
+            <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase text-[#6b6b6b]">Voice Command</label>
+                <div className={`p-3 rounded border text-xs min-h-[60px] font-mono transition-colors ${listening ? 'border-red-500 bg-red-900/10' : 'border-[#3e3e42] bg-[#1e1e1e]'}`}>
+                    {transcript || <span className="opacity-30">e.g., "Create a function to add numbers..."</span>}
+                </div>
+                <div className="flex gap-2">
+                    <button 
+                        onClick={() => SpeechRecognition.startListening()} 
+                        className={`flex-1 p-2 rounded text-xs font-bold flex items-center justify-center gap-2 transition-all ${listening ? 'bg-red-600 text-white' : 'bg-[#333] hover:bg-[#444]'}`}
+                    >
+                        <Mic size={14} /> {listening ? "Rec" : "Record"}
+                    </button>
+                    <button 
+                        onClick={() => { SpeechRecognition.stopListening(); handleAIRequest("generate", transcript); }} 
+                        disabled={isProcessing}
+                        className="flex-1 bg-blue-600 hover:bg-blue-500 text-white p-2 rounded text-xs font-bold flex items-center justify-center gap-2"
+                    >
+                        <StopCircle size={14} /> Process
+                    </button>
+                </div>
             </div>
-          </div>
 
-          <div className="h-px bg-slate-700/50 w-full"></div>
+            {/* 2. Execution */}
+            <div className="space-y-2">
+                 <label className="text-[10px] font-bold uppercase text-[#6b6b6b]">Runtime</label>
+                 <button 
+                    onClick={() => handleAIRequest("execute_code", "")} 
+                    disabled={isProcessing}
+                    className="w-full bg-green-700 hover:bg-green-600 text-white p-2 rounded flex items-center justify-center gap-2 font-bold text-xs"
+                 >
+                    <Play size={14} /> Run Code
+                 </button>
+            </div>
 
-          {/* Tools */}
-          <div className="space-y-3">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tools</label>
-            <ToolsButton label="Simplify Code" icon={<Wand2 size={16} />} onClick={() => handleAIRequest("simplify_code", "")} color="text-purple-400" />
-            <ToolsButton label="Read & Vibrate" icon={<Activity size={16} />} onClick={readAndVibrateCode} color="text-emerald-400" />
-            <ToolsButton label="Explain Error" icon={<Terminal size={16} />} onClick={() => handleAIRequest("explain_error", "Syntax Error")} color="text-orange-400" />
-          </div>
+            {/* 3. Accessibility Tools */}
+            <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase text-[#6b6b6b]">Assistive Tools</label>
+                <ToolsButton label="Simplify Syntax" icon={<Wand2 size={14} />} onClick={() => handleAIRequest("simplify_code", "")} />
+                <ToolsButton label="Read & Vibrate" icon={<Activity size={14} />} onClick={readAndVibrateCode} />
+                <ToolsButton label="Explain Error" icon={<Bug size={14} />} onClick={() => handleAIRequest("explain_error", terminalOutput)} />
+            </div>
         </div>
 
-        {/* Footer / Console */}
-        <div className="p-4 bg-slate-900 border-t border-slate-700/50 text-xs font-mono text-slate-400">
-           <div className="flex items-center gap-2 mb-2">
-             <div className={`w-2 h-2 rounded-full ${isProcessing ? 'bg-yellow-400 animate-pulse' : 'bg-green-400'}`}></div>
-             <span>STATUS</span>
-           </div>
-           <p className="truncate">{isProcessing ? "Thinking..." : consoleOutput}</p>
+        {/* Footer Status */}
+        <div className="p-2 bg-[#007acc] text-white text-[10px] flex justify-between items-center">
+            <span className="truncate max-w-[150px]">{isProcessing ? "Thinking..." : consoleOutput}</span>
+            <span className="flex items-center gap-1"><Volume2 size={10} /> Ready</span>
         </div>
       </div>
 
-      {/* --- EDITOR AREA --- */}
-      <div className="flex-1 bg-[#0f172a] pt-4 pl-2">
+      {/* --- EDITOR PANEL --- */}
+      <div className="flex-1 flex flex-col bg-[#1e1e1e]">
         <Editor
-          height="100vh"
-          defaultLanguage="python"
-          theme="vs-dark"
-          value={code}
-          onChange={(val) => setCode(val || "")}
-          options={{
-            fontSize: 18,
-            fontFamily: "'Inter', sans-serif",
-            minimap: { enabled: false },
-            lineNumbers: "on",
-            roundedSelection: false,
-            scrollBeyondLastLine: false,
-            padding: { top: 20 },
-            overviewRulerBorder: false, 
-          }}
+            height="70vh"
+            defaultLanguage="python"
+            theme="vs-dark"
+            value={code}
+            onChange={(val) => setCode(val || "")}
+            options={{
+                fontSize: 16,
+                fontFamily: "'Fira Code', 'Consolas', monospace",
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                automaticLayout: true,
+                padding: { top: 20, bottom: 20 },
+                lineNumbers: "on",
+                renderWhitespace: "selection"
+            }}
         />
+        
+        {/* Terminal Panel */}
+        <div className="h-[30vh] border-t border-[#2b2b2b] bg-[#1e1e1e] flex flex-col">
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-[#2b2b2b] bg-[#252526] text-[#cccccc] text-xs uppercase tracking-wider">
+                <Terminal size={12} /> Console / Output
+            </div>
+            <div className="flex-1 p-4 font-mono text-sm overflow-auto text-green-400">
+                <pre className="whitespace-pre-wrap">{terminalOutput}</pre>
+            </div>
+        </div>
       </div>
     </main>
   );
 }
 
-// Helper Button Component
-function ToolsButton({ label, icon, onClick, color }: any) {
+// Reusable Button
+function ToolsButton({ label, icon, onClick }: any) {
   return (
-    <button onClick={onClick} className="w-full flex items-center justify-between p-3 rounded-lg bg-slate-800/50 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 transition-all group">
-      <div className="flex items-center gap-3">
-        <div className={`${color} bg-slate-900 p-2 rounded-md`}>{icon}</div>
-        <span className="text-sm font-medium text-slate-200">{label}</span>
-      </div>
-      <ChevronRight size={14} className="text-slate-500 group-hover:translate-x-1 transition-transform" />
+    <button onClick={onClick} className="w-full flex items-center gap-3 p-2 rounded hover:bg-[#37373d] text-[#cccccc] transition-all text-xs text-left group border border-transparent hover:border-[#454545]">
+      <div className="text-[#858585] group-hover:text-white">{icon}</div>
+      <span className="flex-1">{label}</span>
+      <ChevronRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
     </button>
   );
 }

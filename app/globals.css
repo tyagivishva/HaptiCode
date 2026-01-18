@@ -5,28 +5,31 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 10, 10, 10;
-  --background-end-rgb: 0, 0, 0;
+  --vs-bg: #1e1e1e;
+  --vs-sidebar: #252526;
+  --vs-border: #2b2b2b;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: radial-gradient(circle at top left, #1a1a2e, #000000);
+  color: #cccccc;
+  background: var(--vs-bg);
   min-height: 100vh;
 }
 
-/* Custom Scrollbar for that modern feel */
+/* VS Code Styled Scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #1e1e1e; 
+  background: var(--vs-bg); 
 }
 ::-webkit-scrollbar-thumb {
-  background: #444; 
-  border-radius: 4px;
+  background: #424242; 
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #666; 
+  background: #4f4f4f; 
+}
+::-webkit-scrollbar-corner {
+  background: var(--vs-bg);
 }
