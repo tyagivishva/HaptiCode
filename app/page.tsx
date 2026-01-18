@@ -130,6 +130,10 @@ export default function Home() {
   // --- API HANDLER ---
   const handleAIRequest = async (mode: string, inputData: string) => {
     if (mode === "generate" && (!inputData || inputData.trim() === "")) return;
+    if (mode === "execute_code" && (!code || code.trim() === "")) {
+      setConsoleOutput("Please write code first.");
+      return;
+    }
     
     // Prevent multiple simultaneous requests
     if (isProcessingRef.current) return;
@@ -178,7 +182,7 @@ export default function Home() {
       setIsProcessing(false);
       isProcessingRef.current = false;
       // Reset transcript to prevent retrigger
-      if (mode === "generate") resetTranscript();
+      if (mode === "generate" || mode === "execute_code" || mode === "debug") resetTranscript();
     }
   };
 
@@ -233,7 +237,41 @@ export default function Home() {
 
   const speakText = (text: string) => { 
     if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(text);
+        // Convert special characters to their spoken equivalents
+        let spokenText = text
+          .replace(/"/g, " quote ")
+          .replace(/'/g, " apostrophe ")
+          .replace(/`/g, " backtick ")
+          .replace(/</g, " less than ")
+          .replace(/>/g, " greater than ")
+          .replace(/~/g, " tilde ")
+          .replace(/\^/g, " caret ")
+          .replace(/\$/g, " dollar ")
+          .replace(/%/g, " percent ")
+          .replace(/&/g, " ampersand ")
+          .replace(/\*/g, " asterisk ")
+          .replace(/\+/g, " plus ")
+          .replace(/=/g, " equals ")
+          .replace(/-/g, " dash ")
+          .replace(/_/g, " underscore ")
+          .replace(/\{/g, " open brace ")
+          .replace(/\}/g, " close brace ")
+          .replace(/\[/g, " open bracket ")
+          .replace(/\]/g, " close bracket ")
+          .replace(/\(/g, " open paren ")
+          .replace(/\)/g, " close paren ")
+          .replace(/\//g, " slash ")
+          .replace(/\\/g, " backslash ")
+          .replace(/\|/g, " pipe ")
+          .replace(/:/g, " colon ")
+          .replace(/;/g, " semicolon ")
+          .replace(/,/g, " comma ")
+          .replace(/\./g, " dot ")
+          .replace(/\?/g, " question mark ")
+          .replace(/!/g, " exclamation ");
+        
+        const utterance = new SpeechSynthesisUtterance(spokenText);
+        utterance.rate = 1.0;
         window.speechSynthesis.speak(utterance);
     } 
   };
@@ -465,7 +503,7 @@ export default function Home() {
           {/* Play and Debug Buttons - Top Right */}
           <div className="flex items-center gap-2">
             <button 
-              onClick={() => handleAIRequest("execute_code", "")} 
+              onClick={() => handleAIRequest("execute_code", code)} 
               disabled={isProcessing}
               className={`p-2 rounded flex items-center gap-2 transition-all ${
                 highContrast 
@@ -477,7 +515,7 @@ export default function Home() {
               <Play size={16} />
             </button>
             <button 
-              onClick={() => handleAIRequest("debug", "")} 
+              onClick={() => handleAIRequest("debug", code)} 
               disabled={isProcessing}
               className={`p-2 rounded flex items-center gap-2 transition-all ${
                 highContrast 
