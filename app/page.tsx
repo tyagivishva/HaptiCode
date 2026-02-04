@@ -67,6 +67,12 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handleKeyPress);
   }, [showLanding, listening]);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setEditorHeight(60); 
+    }
+  }, []);
+
   // --- NEW: VOICE COMMAND NAVIGATION (Hands-Free Control) ---
   useEffect(() => {
     // Don't process if already processing
@@ -128,37 +134,43 @@ export default function Home() {
   }, [transcript, listening]);
 
   // --- API HANDLER ---
-  const handleAIRequest = async (mode: string, inputData: string) => {
-    if (mode === "generate" && (!inputData || inputData.trim() === "")) return;
-    if (mode === "execute_code" && (!code || code.trim() === "")) {
-      setConsoleOutput("Please write code first.");
-      return;
+ // --- API HANDLER UPDATE ---
+const handleAIRequest = async (mode: string, inputData: string) => {
+  // ... (keep your existing guards)
+
+  setIsProcessing(true);
+  
+  // NEW: Better status messages for different devices
+  const statusMsg = mode === "execute_code" 
+    ? "Running Python script..." 
+    : "HaptiCode is thinking...";
+    
+  setConsoleOutput(statusMsg);
+  speakText(statusMsg); // Accessibility: Tells the user what's happening
+
+  if (mode === "execute_code" || mode === "generate") {
+    setTerminalOutput(">> Terminal Ready");
+  }
+
+  try {
+    const response = await fetch("/api/assistant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode, text: inputData, code: code, breakpoints: breakpoints }),
+    });
+
+    const data = await response.json();
+    
+    // NEW: Handle the specific "Both AI busy" error from your new route.ts
+    if (!response.ok) {
+      const errorMsg = data.result || "Service unavailable";
+      setConsoleOutput("Error.");
+      setTerminalOutput(`>> Error: ${errorMsg}`);
+      speakText("Sorry, the AI services are currently at their limit.");
+      return; 
     }
     
-    // Prevent multiple simultaneous requests
-    if (isProcessingRef.current) return;
-    isProcessingRef.current = true;
-
-    // STOP LISTENING IMMEDIATELY
-    SpeechRecognition.stopListening();
-
-    setIsProcessing(true);
-    setConsoleOutput(mode === "execute_code" ? "Executing..." : `Processing...`);
-    
-    if (mode === "execute_code" || mode === "generate") {
-      setTerminalOutput(">> Terminal Ready");
-    }
-    
-    try {
-      const response = await fetch("/api/assistant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, text: inputData, code: code, breakpoints: breakpoints }),
-      });
-      
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.result);
-
+    // ... (keep the rest of your mode === "generate" logic)
       if (mode === "generate" || mode === "simplify_code") {
         if (mode === "generate") setCode(code + "\n" + data.result);
         else setCode(data.result);
@@ -196,44 +208,106 @@ export default function Home() {
     }
   };
 
+
   const readAndVibrateCode = () => {
-    if (isReading) {
-      window.speechSynthesis.pause();
+    const synth = window.speechSynthesis;
+
+    if (isReading && !isPaused) {
+      // 1. ACTION: PAUSE
+      synth.pause();
       setIsPaused(true);
-    } else if (isPaused) {
-      window.speechSynthesis.resume();
+      setConsoleOutput("Reading paused.");
+    } 
+    else if (isPaused) {
+      // 2. ACTION: RESUME
+      synth.resume();
       setIsPaused(false);
-    } else {
-      window.speechSynthesis.cancel();
+      setConsoleOutput("Resuming...");
+    } 
+    else {
+      // 3. ACTION: START FROM BEGINNING
+      synth.cancel();
+      // Clear any existing vibration timeouts
+      timeoutIdsRef.current.forEach(clearTimeout);
+      timeoutIdsRef.current = [];
+
       const lines = code.split("\n");
       let accumulatedDelay = 0;
-      timeoutIdsRef.current = [];
+
       lines.forEach((line) => {
         const cleanLine = line.trim();
         if (!cleanLine) return;
+
         const indentLevel = Math.floor(line.search(/\S|$/) / 4);
+        
         const timeoutId = setTimeout(() => {
-          if (navigator.vibrate) {
-            if (indentLevel === 0) navigator.vibrate(30);
-            else navigator.vibrate([50, 50]); 
+          // Only trigger haptics if the speech isn't paused
+          if (!synth.paused) {
+            if (navigator.vibrate) {
+              indentLevel === 0 ? navigator.vibrate(30) : navigator.vibrate([50, 50]);
+            }
+            speakText(cleanLine);
           }
-          speakText(cleanLine);
         }, accumulatedDelay);
+
         timeoutIdsRef.current.push(timeoutId);
+        // Adjust timing: words per minute + small pause between lines
         accumulatedDelay += (cleanLine.length * 80) + 1200; 
       });
+
+      setIsReading(true);
       setIsPaused(false);
+      setConsoleOutput("Reading code...");
     }
-    setIsReading(true);
   };
 
   const stopReading = () => {
     window.speechSynthesis.cancel();
-    timeoutIdsRef.current.forEach(id => clearTimeout(id));
+    timeoutIdsRef.current.forEach(clearTimeout);
     timeoutIdsRef.current = [];
     setIsReading(false);
     setIsPaused(false);
+    setConsoleOutput("Reading stopped.");
   };
+
+  // const readAndVibrateCode = () => {
+  //   if (isReading) {
+  //     window.speechSynthesis.pause();
+  //     setIsPaused(true);
+  //   } else if (isPaused) {
+  //     window.speechSynthesis.resume();
+  //     setIsPaused(false);
+  //   } else {
+  //     window.speechSynthesis.cancel();
+  //     const lines = code.split("\n");
+  //     let accumulatedDelay = 0;
+  //     timeoutIdsRef.current = [];
+  //     lines.forEach((line) => {
+  //       const cleanLine = line.trim();
+  //       if (!cleanLine) return;
+  //       const indentLevel = Math.floor(line.search(/\S|$/) / 4);
+  //       const timeoutId = setTimeout(() => {
+  //         if (navigator.vibrate) {
+  //           if (indentLevel === 0) navigator.vibrate(30);
+  //           else navigator.vibrate([50, 50]); 
+  //         }
+  //         speakText(cleanLine);
+  //       }, accumulatedDelay);
+  //       timeoutIdsRef.current.push(timeoutId);
+  //       accumulatedDelay += (cleanLine.length * 80) + 1200; 
+  //     });
+  //     setIsPaused(false);
+  //   }
+  //   setIsReading(true);
+  // };
+
+  // const stopReading = () => {
+  //   window.speechSynthesis.cancel();
+  //   timeoutIdsRef.current.forEach(id => clearTimeout(id));
+  //   timeoutIdsRef.current = [];
+  //   setIsReading(false);
+  //   setIsPaused(false);
+  // };
 
   const speakText = (text: string) => { 
     if ('speechSynthesis' in window) {
@@ -384,7 +458,7 @@ export default function Home() {
             <button 
               onClick={() => {
                 setShowLanding(false);
-                speakText("Welcome to HaptiCode. I am listening.");
+                // speakText("Welcome to HaptiCode. I am listening.");
                 SpeechRecognition.startListening({ continuous: true });
               }}
               className="group relative inline-flex items-center justify-center px-10 py-4 font-bold text-white text-lg transition-all duration-300 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full hover:from-blue-500 hover:to-purple-500 focus:outline-none ring-offset-2 focus:ring-4 ring-blue-400 shadow-lg shadow-blue-500/50 hover:shadow-blue-500/75 hover:scale-105 active:scale-95"
